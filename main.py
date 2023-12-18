@@ -1,6 +1,7 @@
 import PySimpleGUI as sg
 import os
 import re
+import requests
 
 filename = 'Untitled'
 file_location = ''
@@ -14,7 +15,7 @@ def make_window(theme):
                 ['Edit', ['Undo', 'Redo']],
                 ['Options', ['Theme']],
                 ['Run', ['Run Python']],
-                ['About', ['Info', 'Shortcuts']]]
+                ['About', ['Info', 'Shortcuts', 'Update']]]
 
     layout = [
         [sg.MenubarCustom(menu_def, key='-MENU-', font='Courier 10', tearoff=True)],
@@ -138,9 +139,17 @@ def about(page):
         )
 
 
-def update():
+def check_version():
     global version
-
+    url = 'https://raw.githubusercontent.com/Domino03/PyPad/master/version.txt'
+    git_version = requests.get(url).text
+    print(version, git_version)
+    if version.strip() == git_version.strip():
+        sg.popup_no_buttons('You have the latest version!\n',
+                            title=''
+                            )
+    else:
+        sg.popup_no_buttons('PyPad is outdated!\n', title='')
 
 
 def main():
@@ -172,7 +181,7 @@ def main():
         elif event == 'Shortcuts':
             about('shortcuts')
         elif event == 'Update':
-            update()
+            check_version()
         text = values['-TEXTBOX-']
         update_window(window, text)
     window.close()
