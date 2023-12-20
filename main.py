@@ -11,7 +11,7 @@ version = 'v0.2.0'
 font = ['Courier', 10]
 theme = 'black'
 isStatusBar = True
-isWordWrap = True
+isWordWrap = False
 
 
 def make_window():
