@@ -1,35 +1,60 @@
 import PySimpleGUI as sg
-import os
 import re
 import requests
 import json
+import os
+import subprocess
 
 # DEFAULT VALUES FOR GLOBAL VARIABLES
-filename = 'Untitled'
-saved_text = ''
-file_location = ''
+filename = ['Untitled']
+saved_text = ['']
+file_location = ['']
+openTabs = 1
+currentTab = 0
 font = ['Courier', 10]
 theme = 'Black'
 isStatusBar = True
 isWordWrap = False
-rememberLastOpen = True
+rememberLastOpen = False
 zoom = 1
 recent_files = []
 # FIXED VALUES
-version = 'v0.3.0'
+version = 'v0.4.0'
 file_types = (('Text Files', '*.txt'),
               ('Python Files', '*.py'),
               ('JSON Files', '*.json'),
               ('All Files', '*.*'))
+# CUSTOM THEMES
+sg.LOOK_AND_FEEL_TABLE['PyPadDark'] = {'BACKGROUND': '#07090f',
+                                       'TEXT': '#FFFFFF',
+                                       'INPUT': '#2a2b2e',
+                                       'TEXT_INPUT': '#DDDDDD',
+                                       'SCROLL': '#2a2b2e',
+                                       'BUTTON': ('#EEEEEE', '#1e1f22'),
+                                       'PROGRESS': ('#EEEEEE', '#1e1f22'),
+                                       'BORDER': 0,
+                                       'SLIDER_DEPTH': 1,
+                                       'PROGRESS_DEPTH': 0}
+sg.LOOK_AND_FEEL_TABLE['PyPadLight'] = {'BACKGROUND': '',
+                                        'TEXT': '',
+                                        'INPUT': '',
+                                        'TEXT_INPUT': '',
+                                        'SCROLL': '',
+                                        'BUTTON': ('', ''),
+                                        'PROGRESS': ('', ''),
+                                        'BORDER': 1,
+                                        'SLIDER_DEPTH': 0,
+                                        'PROGRESS_DEPTH': 0}
 
 
 def load_config():
-    global file_location, font, theme, isStatusBar, isWordWrap, zoom, recent_files, rememberLastOpen
+    global file_location, font, theme, isStatusBar, isWordWrap, zoom, recent_files, rememberLastOpen, openTabs
     if os.path.exists('config.json'):
         with open('config.json', 'r') as config_file:
             config = json.load(config_file)
     else:
-        config = {"file_location": "",
+        config = {"file_location": [""],
+                  "openTabs": 1,
                   "font": ["Courier", 10],
                   "theme": "Black",
                   "isStatusBar": True,
@@ -38,22 +63,22 @@ def load_config():
                   "zoom": 1.0,
                   "recent_files": []
                   }
-    file_location = config['file_location']
+    rememberLastOpen = config['rememberLastOpen']
+    if rememberLastOpen:
+        file_location = config['file_location']
+        openTabs = config['openTabs']
     font = config['font']
     theme = config['theme']
     isStatusBar = config['isStatusBar']
     isWordWrap = config['isWordWrap']
-    rememberLastOpen = config['rememberLastOpen']
     zoom = config['zoom']
     recent_files = config['recent_files']
 
 
-load_config()
-
-
 def save_config():
-    global file_location, font, theme, isStatusBar, isWordWrap, zoom, recent_files, rememberLastOpen
+    global file_location, font, theme, isStatusBar, isWordWrap, zoom, recent_files, rememberLastOpen, openTabs
     config = {'file_location': file_location,
+              'openTabs': openTabs,
               'font': font,
               'theme': theme,
               'isStatusBar': isStatusBar,
@@ -66,26 +91,46 @@ def save_config():
         json.dump(config, config_file)
 
 
-def reopen_last():
-    global file_location, rememberLastOpen, saved_text, filename
-    if rememberLastOpen and file_location:
-        filename = os.path.basename(file_location)
-        with open(file_location, 'r') as f:
-            saved_text = f.read().strip()
-            return saved_text
-    else:
-        return ''
+def reopen_last(window):
+    global file_location, saved_text, filename, currentTab
+    filename = [''] * openTabs
+    saved_text = [''] * openTabs
+    window['-NEW-TAB-'].update(visible=False)
+    for i in range(openTabs):
+        if file_location[i]:
+            filename[i] = os.path.basename(file_location[i])
+            with open(file_location[i], 'r') as f:
+                saved_text[i] = f.read().strip()
+        else:
+            filename[i] = 'Untitled'
+            saved_text[i] = ''
+        window[f"-TAB{i}-"].update(visible=True)
+    window['-TEXTBOX-'].update(value=saved_text[currentTab])
+    window['-NEW-TAB-'].update(visible=True)
 
 
 def make_window():
-    global font, theme, recent_files
+    global font, theme, recent_files, rememberLastOpen
     sg.theme(theme)
     menu_def = [['File', ['New', 'Open', 'Save', 'Save as', 'Recent', 'Exit']],
                 ['Edit', ['Find', 'Replace']],
                 ['About', ['Info', 'Shortcuts', 'Update']],
                 ['Zoom', ['Zoom in', 'Zoom out', 'Reset']]]
     layout = [
-        [sg.MenubarCustom(menu_def, key='-MENU-', font='Courier 10', pad=(0, 0),
+        [  # TAB BAR
+            sg.Col([[sg.Button('', pad=(0, 0), key='-TAB0-NAME-'), sg.Button('X', pad=(0, 0), key='-CLOSE-TAB0-')]],
+                   pad=(2, 0), key='-TAB0-', visible=True),
+            sg.Col([[sg.Button('', pad=(0, 0), key='-TAB1-NAME-'), sg.Button('X', pad=(0, 0), key='-CLOSE-TAB1-')]],
+                   pad=(2, 0), key='-TAB1-', visible=False),
+            sg.Col([[sg.Button('', pad=(0, 0), key='-TAB2-NAME-'), sg.Button('X', pad=(0, 0), key='-CLOSE-TAB2-')]],
+                   pad=(2, 0), key='-TAB2-', visible=False),
+            sg.Col([[sg.Button('', pad=(0, 0), key='-TAB3-NAME-'), sg.Button('X', pad=(0, 0), key='-CLOSE-TAB3-')]],
+                   pad=(2, 0), key='-TAB3-', visible=False),
+            sg.Col([[sg.Button('', pad=(0, 0), key='-TAB4-NAME-'), sg.Button('X', pad=(0, 0), key='-CLOSE-TAB4-')]],
+                   pad=(2, 0), key='-TAB4-', visible=False),
+            sg.Button('+', key='-NEW-TAB-', pad=(0, 0), visible=True)
+        ],
+        [sg.MenubarCustom(menu_def, key='-MENU-', font='Courier 10', pad=(0, 1),
                           bar_background_color=sg.theme_background_color(),
                           bar_text_color=sg.theme_text_color()),
          sg.Col([[sg.Button('', image_filename='./resources/run.png', border_width=0, pad=(5, 0),
@@ -99,10 +144,10 @@ def make_window():
                       sbar_background_color=sg.theme_background_color(),
                       sbar_trough_color=sg.theme_slider_color(),
                       sbar_relief=sg.RELIEF_FLAT,
-                      pad=(0, 3))],
+                      pad=(1, 0))],
         [sg.StatusBar('', size=(1, 1), key='-STATUSBAR-', font='Courier 10', relief=sg.RELIEF_SUNKEN)]
     ]
-    window = sg.Window(filename + ' - PyPad',
+    window = sg.Window('PyPad',
                        layout,
                        icon='./resources/icon.ico',
                        resizable=True,
@@ -110,12 +155,12 @@ def make_window():
                        finalize=True,
                        font=font,
                        size=(960, 540),
-                       margins=(3, 3))
+                       margins=(5, 0))
     window.set_min_size((480, 270))
     # KEYBOARD SHORTCUTS
     window.bind("<Control-n>", "New")
     window.bind("<Control-s>", "Save")
-    window.bind("<Control-Alt-<s>", "Save as")
+    window.bind("<Control-Alt-s>", "Save as")
     window.bind("<Control-o>", "Open")
     window.bind("<Control-r>", "-RUN-")
     window.bind("<Control-f>", "Find")
@@ -123,7 +168,8 @@ def make_window():
     window.bind("<Control-Up>", 'Zoom in')
     window.bind("<Control-Down>", "Zoom out")
     window.bind("<Control-0>", "Reset")
-    window['-TEXTBOX-'].update(value=reopen_last())
+    if rememberLastOpen:
+        reopen_last(window)
     window['-TEXTBOX-'].update(font=(font[0], int(font[1] * zoom)))
     return window
 
@@ -164,7 +210,7 @@ def make_window_customize():
 
 
 def recent(main_window):
-    global font, theme, recent_files, saved_text, file_location, filename
+    global font, theme, recent_files, saved_text, file_location, filename, currentTab
     if not recent_files:
         sg.popup_no_buttons('No recent files!', no_titlebar=True, auto_close=True, auto_close_duration=1)
         return
@@ -192,28 +238,36 @@ def recent(main_window):
             break
         elif event == '-CHOOSE-':
             if values['-RECENT-']:
-                file_location = values['-RECENT-']
+                file_location[currentTab] = values['-RECENT-']
                 window.close()
-                filename = os.path.basename(file_location)
-                with open(file_location, 'r') as f:
-                    saved_text = f.read().strip()
-                    main_window['-TEXTBOX-'].update(saved_text)
-
+                filename[currentTab] = os.path.basename(file_location[currentTab])
+                with open(file_location[currentTab], 'r') as f:
+                    saved_text[currentTab] = f.read().strip()
+                    main_window['-TEXTBOX-'].update(saved_text[currentTab])
             break
     main_window.enable()
     main_window.bring_to_front()
 
 
 def update_window(window, content):
-    global saved_text, file_location, isStatusBar, recent_files, zoom
-    if saved_text == content:
-        window.set_title(filename + ' - PyPad')
+    global saved_text, file_location, isStatusBar, recent_files, zoom, openTabs, currentTab, font
+    for i in range(openTabs):
+        if saved_text[i] == content[i]:
+            window[f'-TAB{i}-NAME-'].update(filename[i])
+        else:
+            window[f'-TAB{i}-NAME-'].update(filename[i]+'*')
+        if i == currentTab:
+            window[f'-TAB{i}-NAME-'].update(disabled=True)
+        else:
+            window[f'-TAB{i}-NAME-'].update(disabled=False)
+    if openTabs == 1:
+        window['-CLOSE-TAB0-'].update(visible=False)
     else:
-        window.set_title(filename + '* - PyPad')
-    lines = len(content.split('\n'))
-    words = len(re.findall(r'\w+', content))
-    chars = len(content)
-    if str(file_location).endswith('.py'):
+        window['-CLOSE-TAB0-'].update(visible=True)
+    lines = len(content[currentTab].split('\n'))
+    words = len(re.findall(r'\w+', content[currentTab]))
+    chars = len(content[currentTab])
+    if str(file_location[currentTab]).endswith('.py'):
         window['-RUN-'].update(visible=True)
     else:
         window['-RUN-'].update(visible=False)
@@ -226,73 +280,73 @@ def update_window(window, content):
 
 
 def save_to_recent():
-    global file_location
-    if file_location not in recent_files:
-        recent_files.insert(0, file_location)
+    global file_location, currentTab
+    if file_location[currentTab] not in recent_files:
+        recent_files.insert(0, file_location[currentTab])
         if len(recent_files) > 5:
             recent_files.pop()
 
 
 def save_as(content):
-    global file_location, filename, saved_text, recent_files, file_types
-    old_location = file_location
-    file_location = sg.popup_get_file('Save as:', keep_on_top=True, save_as=True,
-                                      file_types=file_types)
-    if file_location:
+    global file_location, filename, saved_text, recent_files, file_types, currentTab
+    old_location = file_location[currentTab]
+    file_location[currentTab] = sg.popup_get_file('Save as:', keep_on_top=True, save_as=True,
+                                                  file_types=file_types)
+    if file_location[currentTab]:
         save_to_recent()
-        filename = os.path.basename(file_location)
-        with open(file_location, 'w') as f:
-            f.write(content)
-        saved_text = content
+        filename[currentTab] = os.path.basename(file_location[currentTab])
+        with open(file_location[currentTab], 'w') as f:
+            f.write(content[currentTab])
+        saved_text[currentTab] = content[currentTab]
     else:
-        file_location = old_location
+        file_location[currentTab] = old_location
 
 
 def save(content):
-    global file_location, saved_text
-    if file_location:
-        with open(file_location, 'w') as f:
-            f.write(content)
-            saved_text = content
+    global file_location, saved_text, currentTab
+    if file_location[currentTab]:
+        with open(file_location[currentTab], 'w') as f:
+            f.write(content[currentTab])
+            saved_text[currentTab] = content[currentTab]
     else:
         save_as(content)
 
 
 def open_file():
-    global file_location, filename, saved_text, recent_files, file_types
-    old_location = file_location
-    file_location = sg.popup_get_file('Choose a file:', keep_on_top=True,
-                                      file_types=file_types)
-    if file_location:
+    global file_location, filename, saved_text, recent_files, file_types, currentTab
+    old_location = file_location[currentTab]
+    file_location[currentTab] = sg.popup_get_file('Choose a file:', keep_on_top=True,
+                                                  file_types=file_types)
+    if file_location[currentTab]:
         save_to_recent()
-        filename = os.path.basename(file_location)
-        with open(file_location, 'r') as f:
-            saved_text = f.read().strip()
-            return saved_text
+        filename[currentTab] = os.path.basename(file_location[currentTab])
+        with open(file_location[currentTab], 'r') as f:
+            saved_text[currentTab] = f.read().strip()
+            return saved_text[currentTab]
     else:
-        file_location = old_location
+        file_location[currentTab] = old_location
 
 
 def new_file():
-    global file_location, filename, saved_text
-    filename = 'Untitled'
-    file_location = ''
-    saved_text = ''
+    global file_location, filename, saved_text, currentTab
+    filename[currentTab] = 'Untitled'
+    file_location[currentTab] = ''
+    saved_text[currentTab] = ''
     return ''
 
 
 def want_save(content):
     global saved_text
-    if saved_text != content and content != '':
+    if saved_text[currentTab] != content[currentTab] and content[currentTab] != '':
         if sg.popup_yes_no('Do you want to save your current file?', title='') == 'Yes':
             save(content)
 
 
 def run_python(content):
-    global file_location
-    if file_location and file_location.endswith(".py"):
+    global file_location, currentTab
+    if file_location[currentTab] and file_location[currentTab].endswith(".py"):
         save(content)
-        os.system(f"python {file_location}")
+        subprocess.Popen(f'python "{file_location[currentTab]}"')
 
 
 def about(page):
@@ -383,16 +437,64 @@ def find(window, replace=False, content=''):
     window['-TEXTBOX-'].update(disabled=False)
 
 
+def new_tab(window, content):
+    global currentTab, openTabs, filename, file_location, saved_text
+    window['-NEW-TAB-'].update(visible=False)
+    openTabs += 1
+    switch_tab(window, openTabs-1, content)
+    filename.append('Untitled')
+    file_location.append('')
+    saved_text.append('')
+    window[f'-TAB{currentTab}-'].update(visible=True)
+    if openTabs < 5:
+        window['-NEW-TAB-'].update(visible=True)
+
+
+def switch_tab(window, tab_nr, content):
+    global filename, currentTab
+    currentTab = int(tab_nr)
+    window['-TEXTBOX-'].update(value=content[currentTab])
+
+
+def close_tab(window, s_tab_nr, content):
+    global currentTab, openTabs, filename, file_location, saved_text
+    tab_nr = int(s_tab_nr)
+    openTabs -= 1
+    filename.pop(tab_nr)
+    file_location.pop(tab_nr)
+    saved_text.pop(tab_nr)
+    if currentTab == tab_nr:
+        switch_tab(window, openTabs-1, content)
+    elif tab_nr < currentTab:
+        currentTab -= 1
+    window[f'-TAB{openTabs}-'].update(visible=False)
+    window['-NEW-TAB-'].update(visible=True)
+
+
 def main():
-    global filename, saved_text, theme, font, isWordWrap, isStatusBar, recent_files, zoom, rememberLastOpen
+    global filename, saved_text, theme, font, isWordWrap, isStatusBar, recent_files, zoom, rememberLastOpen, openTabs, \
+        currentTab
+    load_config()
     window = make_window()
-    text = ''
+    text = list(saved_text)
+    text.append('')
     # PRIMARY WINDOW LOOP
     while True:
         event, values = window.read(timeout=100)
         if event == sg.WIN_CLOSED or event == 'Exit':
             break
         # FILE MENU
+        elif event == '-NEW-TAB-' and openTabs <= 5:
+            new_tab(window, text)
+            text.append('')
+        elif (event in ['-CLOSE-TAB0-', '-CLOSE-TAB1-', '-CLOSE-TAB2-', '-CLOSE-TAB3-', '-CLOSE-TAB4-']
+              and openTabs != 1):
+            want_save(text)
+            close_tab(window, event[-2], text)
+            text.pop(int(event[-2]))
+            window['-TEXTBOX-'].update(value=text[currentTab])
+        elif event in ['-TAB0-NAME-', '-TAB1-NAME-', '-TAB2-NAME-', '-TAB3-NAME-', '-TAB4-NAME-']:
+            switch_tab(window, event[4], text)
         elif event == 'Open':
             want_save(text)
             window['-TEXTBOX-'].update(value=open_file())
@@ -437,16 +539,14 @@ def main():
             want_save(text)
             window.close()
             save_config()
-            filename = 'Untitled'
-            saved_text = ''
             window_c = make_window_customize()
             # OPTIONS WINDOW LOOP
             while True:
                 event_c, values_c = window_c.read(timeout=100)
                 if event_c == sg.WIN_CLOSED or event_c == '-CLOSE-':
                     window_c.close()
-                    load_config()
                     window = make_window()
+                    window['-TEXTBOX-'].update(value=reopen_last(window))
                     break
                 elif event_c == '-APPLY-':
                     theme = values_c['-THEME-']
@@ -461,7 +561,7 @@ def main():
                     restore_default()
                     window_c.close()
                     window_c = make_window_customize()
-        text = values['-TEXTBOX-']
+        text[currentTab] = values['-TEXTBOX-']
         update_window(window, text)
     window.close()
     save_config()
