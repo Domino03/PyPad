@@ -12,14 +12,14 @@ file_location = ['']
 openTabs = 1
 currentTab = 0
 font = ['Courier', 10]
-theme = 'Black'
+theme = 'PyPadDark'
 isStatusBar = True
 isWordWrap = False
 rememberLastOpen = False
 zoom = 1
 recent_files = []
 # FIXED VALUES
-version = 'v0.4.0'
+version = 'v0.4.1'
 file_types = (('Text Files', '*.txt'),
               ('Python Files', '*.py'),
               ('JSON Files', '*.json'),
@@ -56,7 +56,7 @@ def load_config():
         config = {"file_location": [""],
                   "openTabs": 1,
                   "font": ["Courier", 10],
-                  "theme": "Black",
+                  "theme": "PyPadDark",
                   "isStatusBar": True,
                   "isWordWrap": False,
                   "rememberLastOpen": True,
@@ -92,7 +92,7 @@ def save_config():
 
 
 def reopen_last(window):
-    global file_location, saved_text, filename, currentTab
+    global file_location, saved_text, filename, currentTab, openTabs
     filename = [''] * openTabs
     saved_text = [''] * openTabs
     window['-NEW-TAB-'].update(visible=False)
@@ -106,14 +106,17 @@ def reopen_last(window):
             saved_text[i] = ''
         window[f"-TAB{i}-"].update(visible=True)
     window['-TEXTBOX-'].update(value=saved_text[currentTab])
-    window['-NEW-TAB-'].update(visible=True)
+    if openTabs < 5:
+        window['-NEW-TAB-'].update(visible=True)
+    else:
+        window['-NEW-TAB-'].update(visible=False)
 
 
 def make_window():
     global font, theme, recent_files, rememberLastOpen
     sg.theme(theme)
-    menu_def = [['File', ['New', 'Open', 'Save', 'Save as', 'Recent', 'Exit']],
-                ['Edit', ['Find', 'Replace']],
+    menu_def = [['File', ['New', 'Open', 'Save', 'Save as', 'Recent', '---', 'Close Tab', 'Exit']],
+                ['Edit', ['Find']],
                 ['About', ['Info', 'Shortcuts', 'Update']],
                 ['Zoom', ['Zoom in', 'Zoom out', 'Reset']]]
     layout = [
@@ -164,7 +167,6 @@ def make_window():
     window.bind("<Control-o>", "Open")
     window.bind("<Control-r>", "-RUN-")
     window.bind("<Control-f>", "Find")
-    window.bind("<Control-h>", "Replace")
     window.bind("<Control-Up>", 'Zoom in')
     window.bind("<Control-Down>", "Zoom out")
     window.bind("<Control-0>", "Reset")
@@ -209,7 +211,7 @@ def make_window_customize():
     return window
 
 
-def recent(main_window):
+def recent_window(main_window):
     global font, theme, recent_files, saved_text, file_location, filename, currentTab
     if not recent_files:
         sg.popup_no_buttons('No recent files!', no_titlebar=True, auto_close=True, auto_close_duration=1)
@@ -229,7 +231,8 @@ def recent(main_window):
                        resizable=False,
                        finalize=True,
                        element_justification='center',
-                       font=font)
+                       font=font,
+                       keep_on_top=True)
 
     while True:
         event, values = window.read(timeout=100)
@@ -249,17 +252,98 @@ def recent(main_window):
     main_window.bring_to_front()
 
 
+def find_window(main_window, content):
+    # main_window.disable()
+    match_case = True
+    found = 0
+    layout = [
+        [sg.Text('Insert text to find:')],
+        [sg.InputText(key='-FIND-INPUT-')],
+        [sg.Checkbox('Match Case', key='-MATCH-CASE-', default=match_case)],
+        [sg.Text('Insert text to replace with:')],
+        [sg.InputText(key='-REPLACE-INPUT-')],
+        [sg.Button('Find all', key='-FIND-'),
+         sg.Button('Replace all', key='-REPLACE-', disabled=True)],
+        [sg.Text('', key='-OUTPUT-')],
+        [sg.Button('Close', key='-CLOSE-')]
+    ]
+    window = sg.Window(title='',
+                       layout=layout,
+                       icon='./resources/icon.ico',
+                       resizable=False,
+                       finalize=True,
+                       element_justification='center',
+                       no_titlebar=True,
+                       grab_anywhere=True,
+                       keep_on_top=True)
+    text_widget = main_window['-TEXTBOX-'].Widget
+    find_text = ''
+    while True:
+        event, values = window.read(timeout=100)
+        # UPDATES
+        if values['-FIND-INPUT-'] == '':
+            window['-FIND-'].update(disabled=True)
+        else:
+            window['-FIND-'].update(disabled=False)
+        if found > 0:
+            window['-REPLACE-'].update(disabled=False)
+
+        # EVENT HANDLING
+        if event == sg.WIN_CLOSED or event == '-CLOSE-':
+            text_widget.tag_delete('highlight')
+            window.close()
+            break
+        elif event == '-FIND-':
+            match_case = values['-MATCH-CASE-']
+            text_widget.tag_delete('highlight')
+            find_text = values['-FIND-INPUT-']
+            found = find(main_window, find_text, match_case=match_case)
+            window['-OUTPUT-'].update(f"{find_text} was found {found} time(s)!")
+        elif event == '-REPLACE-':
+            find(main_window, find_text, replace=True, replace_text=values['-REPLACE-INPUT-'], content=content)
+            window['-OUTPUT-'].update(f"{find_text} was replaced {found} time(s)!")
+            found = 0
+            window['-REPLACE-'].update(disabled=True)
+    # main_window.enable()
+    # main_window.bring_to_front()
+
+
+def find(window, find_text, match_case=True, replace_text='', replace=False, content=''):
+    text_widget = window['-TEXTBOX-'].Widget
+    start = '1.0'
+    found = 0
+    if not replace:
+        while True:
+            if match_case:
+                pos = text_widget.search(find_text, start, stopindex='end')
+            else:
+                pos = text_widget.search(find_text, start, stopindex='end', nocase=not match_case)
+            if not pos:
+                break
+            found += 1
+            end = f'{pos}+{len(find_text)}c'
+            text_widget.tag_add('highlight', pos, end)
+            text_widget.tag_config('highlight', background='yellow', foreground='black')
+            start = f'{pos}+{len(find_text)}c'
+        return found
+    else:
+        content = content.replace(find_text, replace_text)
+        window['-TEXTBOX-'].update(value=content)
+
+
 def update_window(window, content):
     global saved_text, file_location, isStatusBar, recent_files, zoom, openTabs, currentTab, font
     for i in range(openTabs):
+
         if saved_text[i] == content[i]:
-            window[f'-TAB{i}-NAME-'].update(filename[i])
+            window[f'-TAB{i}-NAME-'].update(filename[i]+' ')
         else:
             window[f'-TAB{i}-NAME-'].update(filename[i]+'*')
         if i == currentTab:
             window[f'-TAB{i}-NAME-'].update(disabled=True)
         else:
             window[f'-TAB{i}-NAME-'].update(disabled=False)
+    window.set_title(f'{filename[currentTab]} - pypad')
     if openTabs == 1:
         window['-CLOSE-TAB0-'].update(visible=False)
     else:
@@ -395,46 +479,10 @@ def check_version():
 def restore_default():
     global font, theme, isStatusBar, isWordWrap, rememberLastOpen
     font = ['Courier', 10]
-    theme = 'Black'
+    theme = 'PyPadDark'
     isStatusBar = True
     isWordWrap = True
     rememberLastOpen = True
-
-
-def find(window, replace=False, content=''):
-    window['-TEXTBOX-'].update(disabled=True)
-    find_text = sg.popup_get_text(title='Find - PyPad', message='Insert Text to Find', no_titlebar=True)
-    if find_text:
-        text_widget = window['-TEXTBOX-'].Widget
-        start = '1.0'
-        found = 0
-        while True:
-            pos = text_widget.search(find_text, start, stopindex='end')
-            if not pos:
-                break
-            found += 1
-            end = f'{pos}+{len(find_text)}c'
-            text_widget.tag_add('highlight', pos, end)
-            text_widget.tag_config('highlight', background='yellow', foreground='black')
-            start = f'{pos}+{len(find_text)}c'
-        if found > 0:
-            if not replace:
-                sg.popup(f"'{find_text}' was found {found} time(s)",
-                         title='',
-                         icon='./resources/icon.ico')
-            else:
-                replace_text = sg.popup_get_text(f"{find_text}' was found {found} time(s)\n"
-                                                 f"Choose word to replace it with:",
-                                                 title='',
-                                                 no_titlebar=True)
-                if replace_text:
-                    content = content.replace(find_text, replace_text)
-                    window['-TEXTBOX-'].update(value=content)
-            text_widget.tag_delete('highlight')
-        else:
-            sg.popup_no_buttons(f"File doesn't contain '{find_text}'", no_titlebar=True, auto_close=True,
-                                auto_close_duration=1)
-    window['-TEXTBOX-'].update(disabled=False)
 
 
 def new_tab(window, content):
@@ -484,16 +532,20 @@ def main():
         if event == sg.WIN_CLOSED or event == 'Exit':
             break
         # FILE MENU
-        elif event == '-NEW-TAB-' and openTabs <= 5:
+        elif event == '-NEW-TAB-' and openTabs < 5:
             new_tab(window, text)
             text.append('')
-        elif (event in ['-CLOSE-TAB0-', '-CLOSE-TAB1-', '-CLOSE-TAB2-', '-CLOSE-TAB3-', '-CLOSE-TAB4-']
-              and openTabs != 1):
+        elif event.startswith('-CLOSE-TAB') and openTabs != 1:
             want_save(text)
             close_tab(window, event[-2], text)
             text.pop(int(event[-2]))
             window['-TEXTBOX-'].update(value=text[currentTab])
-        elif event in ['-TAB0-NAME-', '-TAB1-NAME-', '-TAB2-NAME-', '-TAB3-NAME-', '-TAB4-NAME-']:
+        elif event == 'Close Tab' and openTabs != 1:
+            want_save(text)
+            close_tab(window, currentTab, text)
+            text.pop(currentTab)
+            window['-TEXTBOX-'].update(value=text[currentTab])
+        elif event.startswith('-TAB'):
             switch_tab(window, event[4], text)
         elif event == 'Open':
             want_save(text)
@@ -507,12 +559,10 @@ def main():
             window['-TEXTBOX-'].update(value=new_file())
         elif event == 'Recent':
             want_save(text)
-            recent(window)
+            recent_window(window)
         # EDIT MENU
         elif event == 'Find':
-            find(window)
-        elif event == 'Replace':
-            find(window, replace=True, content=values['-TEXTBOX-'])
+            find_window(window, text[currentTab])
         # ABOUT MENU
         elif event == 'Info':
             about('info')
